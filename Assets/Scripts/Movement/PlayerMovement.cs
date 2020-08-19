@@ -1,49 +1,62 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-//This script requires you to have setup your animator with 3 parameters, "InputMagnitude", "InputX", "InputZ"
-//With a blend tree to control the inputmagnitude and allow blending between animations.
-[RequireComponent(typeof(CharacterController))]
-public class MovementInput : MonoBehaviour 
+[RequireComponent(typeof(Rigidbody))]
+public class PlayerMovement : MonoBehaviour 
 {
-	private Controls controls;
+    [SerializeField] private float speed = 10f;
+    [SerializeField] private float jumpForce = 10f;
+
+    private Controls controls;
     
-    private float horizontal;
-    private Animator anim;
+    private new Rigidbody rigidbody;
 
-    [SerializeField] private float moveTime = 10f;
-    [Header("Animation Smoothing")]
-    [Range(0, 1f)]
-    public float HorizontalAnimSmoothTime = 0.2f;
-    [Range(0, 1f)]
-    public float VerticalAnimTime = 0.2f;
-    [Range(0, 1f)]
-    public float StartAnimTime = 0.3f;
-    [Range(0, 1f)]
-    public float StopAnimTime = 0.15f;
+    private float move;
 
-    private bool readyToClear;
+    private int oldMove;
+
+    private float Move
+    {
+        get { return move; }
+        set { move = value; MoveCharacter(); }
+    }
 
     private void Awake()
 	{
 		controls = new Controls();
+
+        controls.Player.Jump.performed += ctx => StartCoroutine(Jump());
+        controls.Player.Move.performed += ctx => Move = controls.Player.Move.ReadValue<float>();
+        controls.Player.Move.canceled += ctx => Move = 0f;
+
+        rigidbody = GetComponent<Rigidbody>();
 	}
 
-    private void Update()
+    private void MoveCharacter()
     {
-        ClearInput();
-        Move();
+        rigidbody.velocity = new Vector3(Move * speed, rigidbody.velocity.y, rigidbody.velocity.z);
+
+        if ((int)Mathf.Clamp(move, -1, 1) != 0 && (int)Mathf.Clamp(move, -1, 1) != oldMove)
+        {
+            transform.rotation = Quaternion.LookRotation(new Vector3((int)Mathf.Clamp(move, -1, 1), 0, 0));
+
+            StartCoroutine(Turn());
+
+            oldMove = (int)Mathf.Clamp(move, -1, 1);
+        }
+
+        if (rigidbody.velocity.x > 0.01 || rigidbody.velocity.x < -0.01)
+        {
+            GetComponent<Animator>().SetBool("isRunning", true);
+        }
+        else
+        {
+            GetComponent<Animator>().SetBool("isRunning", false);
+        }
     }
 
-    void FixedUpdate()
-    {
-        // Set a flag that lets inputs to be cleared out during the next Update().
-        // This ensures that all code gets to use the current inputs.
-        readyToClear = true;
-    }
-
+    /*
     private void Move()
     {
         //=================================================
@@ -73,28 +86,54 @@ public class MovementInput : MonoBehaviour
         //anim.SetFloat("InputX", this.horizontal, HorizontalAnimSmoothTime, Time.deltaTime * 2f);
 
 
-        GetComponent<CharacterController>().Move(new Vector3(this.horizontal * moveTime * Time.deltaTime, 0, 0));
+        //GetComponent<CharacterController>().Move(new Vector3(this.horizontal * moveTime * Time.deltaTime, 0, 0));
+    }
+    */
+
+    private IEnumerator Jump()
+    {
+        if (rigidbody.velocity.y < 0.01)
+        {
+            rigidbody.velocity = new Vector3(rigidbody.velocity.x, jumpForce, rigidbody.velocity.z);
+
+            GetComponent<Animator>().SetTrigger("Jumping");
+
+            yield return new WaitForSeconds(GetAnimationTime(GetComponent<Animator>()));
+
+            GetComponent<Animator>().ResetTrigger("Jumping");
+        }
     }
 
-    // Clear input, if we are ready
-    private void ClearInput()
+    private IEnumerator Turn()
     {
-        // If we are not ready to clear input, exit
-        if (!readyToClear) return;
+        GetComponent<Animator>().SetTrigger("Turning");
 
-        // Reset all axis
-        horizontal = 0f;
-        readyToClear = false;    }
+        yield return new WaitForSeconds(GetAnimationTime(GetComponent<Animator>()));
+
+        GetComponent<Animator>().ResetTrigger("Turning");
+    }
+
+    public float GetAnimationTime(Animator animator)
+    {
+        AnimatorClipInfo[] currentClip = null;
+        float waitTime = 0;
+
+        currentClip = animator.GetCurrentAnimatorClipInfo(0);
+        if (currentClip.Length > 0)
+            waitTime = currentClip[0].clip.length;
+
+        return waitTime;
+    }
 
 
     void OnEnable()
 	{
-		controls.Player.Move.Enable();
+		controls.Player.Enable();
 	}
 
 	void OnDisable()
 	{
-		controls.Player.Move.Enable();
+		controls.Player.Enable();
 	}
 
 
