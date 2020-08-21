@@ -2,58 +2,69 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour 
 {
     [SerializeField] private float speed = 10f;
-    [SerializeField] private float jumpForce = 10f;
+    [SerializeField] private float jumpForce = 12f;
+    [SerializeField] private float gravityScale = 3;
+    [SerializeField] private float rotationSpeed = 90;
 
     private Controls controls;
-    
-    private new Rigidbody rigidbody;
+    private CharacterController controller;
+    private Animator animator;
 
     private float move;
+    private bool jump;
 
-    private int oldMove;
-
-    private float Move
+    private float MoveValue
     {
-        get { return move; }
-        set { move = value; MoveCharacter(); }
+        set { move = value; SetMoveAnimation(); //ChangeOrientation();
+        }
     }
+
+    private Vector3 moveDirection;
 
     private void Awake()
 	{
 		controls = new Controls();
 
-        controls.Player.Jump.performed += ctx => StartCoroutine(Jump());
-        controls.Player.Move.performed += ctx => Move = controls.Player.Move.ReadValue<float>();
-        controls.Player.Move.canceled += ctx => Move = 0f;
+        controls.Player.Jump.performed += ctx => jump = true;
+        controls.Player.Jump.canceled += ctx => jump = false;
+        controls.Player.Move.performed += ctx => MoveValue = controls.Player.Move.ReadValue<float>();
+        controls.Player.Move.canceled += ctx => MoveValue = 0f;
 
-        rigidbody = GetComponent<Rigidbody>();
+        controller = GetComponent<CharacterController>();
+        animator = GetComponent<Animator>();
 	}
 
-    private void MoveCharacter()
+    private void FixedUpdate()
     {
-        rigidbody.velocity = new Vector3(Move * speed, rigidbody.velocity.y, rigidbody.velocity.z);
+        moveDirection = new Vector3(move * speed, moveDirection.y, moveDirection.z);
 
-        if ((int)Mathf.Clamp(move, -1, 1) != 0 && (int)Mathf.Clamp(move, -1, 1) != oldMove)
+        if (controller.isGrounded && jump)
         {
-            transform.rotation = Quaternion.LookRotation(new Vector3((int)Mathf.Clamp(move, -1, 1), 0, 0));
-
-            StartCoroutine(Turn());
-
-            oldMove = (int)Mathf.Clamp(move, -1, 1);
+            moveDirection.y = jumpForce;
+            jump = false;
         }
 
-        if (rigidbody.velocity.x > 0.01 || rigidbody.velocity.x < -0.01)
-        {
-            GetComponent<Animator>().SetBool("isRunning", true);
-        }
-        else
-        {
-            GetComponent<Animator>().SetBool("isRunning", false);
-        }
+        transform.right = Vector3.Slerp(transform.right, Vector3.back * (int)Mathf.Clamp(move, -1, 1), 0.15f);
+
+        moveDirection.y += Physics.gravity.y * gravityScale * Time.deltaTime;
+        controller.Move(moveDirection * Time.deltaTime);
+    }
+
+    private void ChangeOrientation()
+    {
+        //transform.rotation = Quaternion.Lerp(transform.rotation, new Quaternion(0, 90 * (int)move, 0, 0), Time.deltaTime * 0.5f / 100);
+
+        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(Vector3.up * (int)move), speed * Time.deltaTime);
+
+    }
+
+    private void SetMoveAnimation()
+    {
+        animator.SetFloat("Move Speed", move);
     }
 
     /*
@@ -90,8 +101,17 @@ public class PlayerMovement : MonoBehaviour
     }
     */
 
-    private IEnumerator Jump()
+    private void Jump()
     {
+        if (controller.isGrounded)
+        {
+            moveDirection.y = jumpForce;
+
+            moveDirection.y += Physics.gravity.y * gravityScale * Time.deltaTime;
+            controller.Move(moveDirection * Time.deltaTime);
+        }
+
+        /*
         if (rigidbody.velocity.y < 0.01)
         {
             rigidbody.velocity = new Vector3(rigidbody.velocity.x, jumpForce, rigidbody.velocity.z);
@@ -102,27 +122,12 @@ public class PlayerMovement : MonoBehaviour
 
             GetComponent<Animator>().ResetTrigger("Jumping");
         }
+        */
     }
 
-    private IEnumerator Turn()
+    private void Move()
     {
-        GetComponent<Animator>().SetTrigger("Turning");
 
-        yield return new WaitForSeconds(GetAnimationTime(GetComponent<Animator>()));
-
-        GetComponent<Animator>().ResetTrigger("Turning");
-    }
-
-    public float GetAnimationTime(Animator animator)
-    {
-        AnimatorClipInfo[] currentClip = null;
-        float waitTime = 0;
-
-        currentClip = animator.GetCurrentAnimatorClipInfo(0);
-        if (currentClip.Length > 0)
-            waitTime = currentClip[0].clip.length;
-
-        return waitTime;
     }
 
 
@@ -137,7 +142,44 @@ public class PlayerMovement : MonoBehaviour
 	}
 
 
-	/*
+    /*
+	         //rigidbody.velocity = new Vector3(move * speed, rigidbody.velocity.y, rigidbody.velocity.z);
+
+        //GetComponent<Animator>().SetFloat("Move Speed", move);
+
+        //if ((int)Mathf.Clamp(move, -1, 1) != 0 && (int)Mathf.Clamp(move, -1, 1) != oldMove)
+        //{
+        //if ((int)Mathf.Clamp(move, -1, 1) != 0)
+        //    transform.rotation = Quaternion.LookRotation(new Vector3((int)Mathf.Clamp(move, -1, 1), 0, 0));
+
+        //    oldMove = (int)Mathf.Clamp(move, -1, 1);
+        //}
+
+        if (rigidbody.velocity.x > 0.01 || rigidbody.velocity.x < -0.01)
+        {
+            GetComponent<Animator>().SetBool("isRunning", true);
+        }
+        else
+        {
+            GetComponent<Animator>().SetBool("isRunning", false);
+        }
+
+    // Calculate how fast we should be moving
+    Vector3 targetVelocity = new Vector3(move, 0, 0);
+    targetVelocity = transform.TransformDirection(targetVelocity);
+    targetVelocity *= speed;
+
+    // Apply a force that attempts to reach our target velocity
+    Vector3 velocity = rigidbody.velocity;
+    Vector3 velocityChange = (targetVelocity - velocity);
+    velocityChange.x = Mathf.Clamp(velocityChange.x, -speed, speed);
+    velocityChange.y = 0;
+    velocityChange.z = 0;
+    rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+
+    rigidbody.AddForce(new Vector3(move* 100, 0, 0));
+
+
 	public float Velocity;
     [Space]
 
