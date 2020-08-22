@@ -1061,7 +1061,7 @@ MonoBehaviour:
   speed: 10
   jumpForce: 12
   gravityScale: 3
-  rotationSpeed: 90
+  rotationSpeed: 0.25
 --- !u!95 &7635726065102334493
 Animator:
   serializedVersion: 3
